@@ -1,0 +1,16 @@
+[package]
+name = "exercise-3"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+
+[dependencies]
+ed25519-dalek={ version = "1.0.1" }
+rand_core="0.5.0"
+hex="0.4.3"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.16.0"
+futures-util = "0.3"
+data-encoding = "2.5.0"
