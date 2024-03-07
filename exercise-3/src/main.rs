@@ -155,3 +155,5 @@ fn sign_message(keypair: &Keypair, message: &str) -> String {
     let signature = keypair.sign(message.as_bytes());
     BASE64.encode(signature.as_ref())
 }
+
+hey = ["apple", "16pro", "android", "samsung", "galaxy", "vivo", "xiomi", "nokia"];
