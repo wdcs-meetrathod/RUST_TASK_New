@@ -1,59 +1,43 @@
 use std::{ error::Error, net::SocketAddr, sync::Arc };
-use futures_util::{ SinkExt, StreamExt };
-use rand_core::OsRng;
-use tokio::{ io::AsyncReadExt, io::BufReader, net::{ TcpListener, TcpStream }, sync::Mutex };
-use tokio_websockets::{ Message, ServerBuilder, WebSocketStream };
-use ed25519_dalek::Keypair;
+use tokio::{ io::{ AsyncReadExt, AsyncWriteExt, BufReader }, net::TcpListener, sync::Mutex };
+
+#[path = "../my_module.rs"]
+mod my_module;
 
 struct SharedState {
     prices: Vec<f64>,
-    token: Keypair,
     connected_clients: usize,
 }
 
 async fn handle_connection(
     add: SocketAddr,
-    mut ws_stream: WebSocketStream<TcpStream>,
-    shared_state: Arc<Mutex<SharedState>>
+    mut ws_stream: tokio::sync::MutexGuard<'_, tokio::net::TcpStream>,
+    shared_state: Arc<Mutex<SharedState>>,
+    signed_data: (String, String)
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     const TOTAL_CLIENT: usize = 5;
 
-    ws_stream
-        .send(Message::text("Welcome to the aggregator".to_string())).await
-        .expect("Handshake failed");
+    ws_stream.write_all("Welcome to the aggregator".as_bytes()).await.expect("Handshake failed");
 
-    loop {
-        let mut guard = shared_state.lock().await;
+    let mut guard = shared_state.lock().await;
+    guard.connected_clients += 1;
 
-        guard.connected_clients += 1;
+    let message = my_module::verify_message(guard.connected_clients as i32, signed_data);
 
-        let incoming = match ws_stream.next().await {
-            Some(Ok(message)) => message,
-            Some(Err(err)) => {
-                println!("Error while receiving the message {}", err);
-                return Err(err.into());
-            }
-            None => {
-                break;
-            }
-        };
+    // println!("From client {add:?} {message}");
 
-        if let Some(text) = incoming.as_text() {
-            println!("From client {add:?} {text:?}");
+    // if let Ok(price) = message.parse::<f64>() {
+    //     guard.prices.push(price);
+    // }
 
-            if let Ok(price) = text.parse::<f64>() {
-                guard.prices.push(price);
-            }
-        }
-    }
+    // if guard.prices.len() == TOTAL_CLIENT {
+    //     let sum: f64 = guard.prices.iter().sum();
+    //     let final_aggregated_price = sum / (TOTAL_CLIENT as f64);
+    //     println!("Final aggregated price {final_aggregated_price} ");
+    //     std::process::exit(0);
+    // }
 
-    let guard = shared_state.lock().await;
-    if guard.prices.len() == TOTAL_CLIENT {
-        let sum: f64 = guard.prices.iter().sum();
-        let final_aggregated_price = sum / (TOTAL_CLIENT as f64);
-        println!("Final aggregated price {final_aggregated_price} ");
-        std::process::exit(0);
-    }
+    drop(guard);
 
     Ok(())
 }
@@ -68,42 +52,46 @@ async fn main() {
         Mutex::new(SharedState {
             connected_clients: 0,
             prices: Vec::new(),
-            token: Keypair::generate(&mut OsRng),
         })
     );
 
     println!("Server in listing on {address}");
 
     loop {
-        let (mut socket, add) = listener.accept().await.expect("Socket failed");
+        let (socket, add) = listener.accept().await.expect("Socket failed");
 
         println!("New connection {add}");
 
         let shared_state_clone = Arc::clone(&shared_state); // Clone for each connection
 
         tokio::spawn(async move {
-            let mut reader = BufReader::new(socket);
-            let mut buffer = [0_u8; 1024];
-            let read_size = reader.read(&mut buffer).await.expect("Unable to read");
-            if read_size != 0 {
-                let data = buffer[0..read_size].to_vec();
-                let string_data = String::from_utf8_lossy(&data).to_string();
+            let socket = Arc::new(Mutex::new(socket));
+            let mut socket_guard = socket.lock().await;
 
-                println!("{string_data}");
+            let mut reader = BufReader::new(&mut *socket_guard);
+            let mut buffer = [0_u8; 1024];
+
+            match reader.read(&mut buffer).await {
+                Ok(read_size) if read_size != 0 => {
+                    let data = &buffer[0..read_size];
+
+                    let sign_message: (String, String) = bincode
+                        ::deserialize(&data)
+                        .expect("Error while deserializing the data");
+
+                    handle_connection(add, socket_guard, shared_state_clone, sign_message).await
+                }
+
+                Ok(_) => {
+                    eprintln!("No data from {}", add);
+                    Ok(())
+                }
+
+                Err(err) => {
+                    eprintln!("Error reading from {} {}", add, err);
+                    Err(err.into())
+                }
             }
         });
-
-        // let mut recv_str = String::new();
-        // let msg_size = socket.read_to_string(&mut recv_str).await.expect("unable to read");
-        // println!("read_string: {:?}", recv_str);
-        // if msg_size == 0 {
-        //     break;
-        // }
-
-        // tokio::spawn(async move {
-        //     let ws_steam = ServerBuilder::new().accept(socket).await.expect("Server build failed");
-
-        //
-        // });
     }
 }

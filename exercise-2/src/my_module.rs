@@ -1,7 +1,7 @@
 use serde::{ Deserialize, Serialize };
 use tungstenite::connect;
 use url::Url;
-use std::fs::{ self, OpenOptions };
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::time::Instant;
 
@@ -79,10 +79,6 @@ pub fn cache_price(time: u32) -> Result<f64, String> {
                         continue;
                     }
                 }
-            }
-            _ => {
-                eprintln!("'p' field is not a string: {:?}", btc_price);
-                continue;
             }
         };
 

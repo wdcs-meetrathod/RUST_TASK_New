@@ -1,0 +1,6 @@
+From client 1---> 503752.3649999999
+From client 2---> 2082152.6700000013
+From client 3---> 705245.2499999998
+From client 4---> 402997.2899999999
+From client 5---> 1208991.5849999997
+Final aggregated price 980627.8320000002 

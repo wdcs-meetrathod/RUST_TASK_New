@@ -1,54 +1,46 @@
-use std::{ error::Error, net::SocketAddr, sync::Arc };
-use futures_util::{ SinkExt, StreamExt };
-use tokio::{ net::{ TcpListener, TcpStream }, sync::Mutex };
-use tokio_websockets::{ Message, ServerBuilder, WebSocketStream };
+use std::{ error::Error, fs::{ File, OpenOptions }, net::SocketAddr, sync::Arc };
+use std::io::Write;
+use tokio::{ io::{ AsyncReadExt, AsyncWriteExt, BufReader }, net::TcpListener, sync::Mutex };
+
+struct SharedState {
+    prices: Vec<f64>,
+    connected_clients: usize,
+}
 
 async fn handle_connection(
     add: SocketAddr,
-    mut ws_steam: WebSocketStream<TcpStream>,
-    client_averages: Arc<Mutex<Vec<f64>>>
+    mut ws_stream: tokio::sync::MutexGuard<'_, tokio::net::TcpStream>,
+    shared_state: Arc<Mutex<SharedState>>,
+    text: String,
+    mut file: File
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     const TOTAL_CLIENT: usize = 5;
 
-    ws_steam
-        .send(Message::text("Welcome to the aggregator".to_string())).await
-        .expect("Handshake failed");
+    ws_stream.write_all("Welcome to the aggregator".as_bytes()).await.expect("Handshake failed");
 
-    loop {
-        tokio::select! {
-        incoming = ws_steam.next()=>{
-            match incoming{
-                Some(Ok(message)) =>{
-                    if let Some(text) = message.as_text(){
-                          println!("From client {add:?} {text:?}");
-                            let mut guard = client_averages.lock().await;
-                          if let Ok(price) = text.parse::<f64>(){
-                            guard.push(price);
-                          };
+    let mut guard = shared_state.lock().await;
+    guard.connected_clients += 1;
 
-                    };
-                   }
+    println!("From client {add:?} {text:?}");
 
-                   Some(Err(err))=>{
-                    return Err(err.into());
-                   }
-                   None =>{
-                    break;
-                   }
-                }
-            }
-
-        }
+    if let Ok(price) = text.parse::<f64>() {
+        guard.prices.push(price);
+        let result = format!("From client {}---> {price}", guard.connected_clients);
+        writeln!(file, "{}", result).expect("Error while writing in file");
     }
 
-    println!("{}", client_averages.lock().await.len());
+    if guard.prices.len() == TOTAL_CLIENT {
+        let sum: f64 = guard.prices.iter().sum();
+        let final_aggregated_price = sum / (TOTAL_CLIENT as f64);
 
-    if client_averages.lock().await.len() == TOTAL_CLIENT {
-        let sum: f64 = client_averages.lock().await.iter().sum();
-        let final_aggregated_prise = sum / (TOTAL_CLIENT as f64);
-        println!("Final aggregated prise {final_aggregated_prise} ");
-        std::process::exit(1);
+        let result = format!("Final aggregated price {final_aggregated_price} ");
+        println!("{}", result);
+
+        writeln!(file, "{}", result).expect("Error while writing in file");
+        std::process::exit(0);
     }
+
+    drop(guard);
 
     Ok(())
 }
@@ -59,7 +51,12 @@ async fn main() {
 
     let listener = TcpListener::bind(address).await.expect("Failed to connect");
 
-    let client_averages: Arc<Mutex<Vec<f64>>> = Arc::new(Mutex::new(Vec::new()));
+    let shared_state = Arc::new(
+        Mutex::new(SharedState {
+            connected_clients: 0,
+            prices: Vec::new(),
+        })
+    );
 
     println!("Server in listing on {address}");
 
@@ -68,12 +65,50 @@ async fn main() {
 
         println!("New connection {add}");
 
-        let client_averages_clone = Arc::clone(&client_averages); // Clone for each connection
+        // let file_path = "./clientAggregationData.txt";
+        // let file_exists = std::path::Path::new(file_path).exists();
+
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            // .truncate(!file_exists)
+            .open("./clientAggregationData.txt")
+            .expect("Error while opening file");
+
+        let shared_state_clone = Arc::clone(&shared_state); // Clone for each connection
 
         tokio::spawn(async move {
-            let ws_steam = ServerBuilder::new().accept(socket).await.expect("Server build failed");
+            let socket = Arc::new(Mutex::new(socket));
+            let mut socket_guard = socket.lock().await;
 
-            handle_connection(add, ws_steam, client_averages_clone).await
+            let mut reader = BufReader::new(&mut *socket_guard);
+            let mut buffer = [0_u8; 1024];
+
+            match reader.read(&mut buffer).await {
+                Ok(read_size) if read_size != 0 => {
+                    let data = buffer[0..read_size].to_vec();
+                    let string_data = String::from_utf8_lossy(&data).to_string();
+
+                    handle_connection(
+                        add,
+                        socket_guard,
+                        shared_state_clone,
+                        string_data,
+                        file
+                    ).await
+                }
+
+                Ok(_) => {
+                    eprintln!("No data from {}", add);
+                    Ok(())
+                }
+
+                Err(err) => {
+                    eprintln!("Error reading from {} {}", add, err);
+                    Err(err.into())
+                }
+            }
         });
     }
 }
