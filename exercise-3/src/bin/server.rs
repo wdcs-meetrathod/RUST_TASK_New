@@ -1,9 +1,6 @@
-use std::{error::Error, net::SocketAddr, sync::Arc};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufReader},
-    net::TcpListener,
-    sync::Mutex,
-};
+use std::{ error::Error, fs::OpenOptions, net::SocketAddr, sync::Arc };
+use std::io::Write;
+use tokio::{ io::{ AsyncReadExt, AsyncWriteExt, BufReader }, net::TcpListener, sync::Mutex };
 
 #[path = "../my_module.rs"]
 mod my_module;
@@ -17,21 +14,29 @@ async fn handle_connection(
     add: SocketAddr,
     mut ws_stream: tokio::sync::MutexGuard<'_, tokio::net::TcpStream>,
     shared_state: Arc<Mutex<SharedState>>,
-    signed_data: (String, &[u8]),
+    signed_data: (String, &[u8])
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     const TOTAL_CLIENT: usize = 5;
 
-    ws_stream
-        .write_all("Welcome to the aggregator".as_bytes())
-        .await
-        .expect("Handshake failed");
+    ws_stream.write_all("Welcome to the aggregator".as_bytes()).await.expect("Handshake failed");
 
     let mut guard = shared_state.lock().await;
     guard.connected_clients += 1;
 
     match my_module::verify_message(guard.connected_clients as i32, signed_data) {
         Some(message) => {
-            println!("From client {add:?} {message}");
+            let client_price = format!("From client {add:?} {message}");
+
+            println!("{client_price}");
+
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .append(true)
+                .open("./client_prices.txt")
+                .expect("Error while opening file");
+
+            writeln!(file, "{}", client_price).expect("Error while writing in file");
 
             if let Ok(price) = message.parse::<f64>() {
                 guard.prices.push(price);
@@ -40,14 +45,19 @@ async fn handle_connection(
             if guard.prices.len() == TOTAL_CLIENT {
                 let sum: f64 = guard.prices.iter().sum();
                 let final_aggregated_price = sum / (TOTAL_CLIENT as f64);
-                println!("Final aggregated price {final_aggregated_price} ");
+
+                let aggregated_price = format!("Final aggregated price {final_aggregated_price} ");
+                println!("{aggregated_price}");
+
+                writeln!(file, "{}", aggregated_price).expect("Error while writing in file");
+
                 std::process::exit(0);
             }
 
             drop(guard);
         }
         None => (),
-    };
+    }
 
     Ok(())
 }
@@ -58,10 +68,12 @@ async fn main() {
 
     let listener = TcpListener::bind(address).await.expect("Failed to connect");
 
-    let shared_state = Arc::new(Mutex::new(SharedState {
-        connected_clients: 0,
-        prices: Vec::new(),
-    }));
+    let shared_state = Arc::new(
+        Mutex::new(SharedState {
+            connected_clients: 0,
+            prices: Vec::new(),
+        })
+    );
 
     println!("Server in listing on {address}");
 
@@ -83,8 +95,9 @@ async fn main() {
                 Ok(read_size) if read_size != 0 => {
                     let data = &buffer[0..read_size];
 
-                    let sign_message: (String, &[u8]) =
-                        bincode::deserialize(&data).expect("Error while deserializing the data");
+                    let sign_message: (String, &[u8]) = bincode
+                        ::deserialize(&data)
+                        .expect("Error while deserializing the data");
 
                     handle_connection(add, socket_guard, shared_state_clone, sign_message).await
                 }
