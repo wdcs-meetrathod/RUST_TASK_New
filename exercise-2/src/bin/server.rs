@@ -1,6 +1,17 @@
-use std::{ error::Error, fs::{ File, OpenOptions }, net::SocketAddr, sync::Arc };
+use std::fs::remove_file;
 use std::io::Write;
-use tokio::{ io::{ AsyncReadExt, AsyncWriteExt, BufReader }, net::TcpListener, sync::Mutex };
+use std::path::Path;
+use std::{
+    error::Error,
+    fs::{File, OpenOptions},
+    net::SocketAddr,
+    sync::Arc,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt, BufReader},
+    net::TcpListener,
+    sync::Mutex,
+};
 
 struct SharedState {
     prices: Vec<f64>,
@@ -9,14 +20,17 @@ struct SharedState {
 
 async fn handle_connection(
     add: SocketAddr,
-    mut ws_stream: tokio::sync::MutexGuard<'_, tokio::net::TcpStream>,
+    mut ws_stream: tokio::net::TcpStream,
     shared_state: Arc<Mutex<SharedState>>,
     text: String,
-    mut file: File
+    mut file: File,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     const TOTAL_CLIENT: usize = 5;
 
-    ws_stream.write_all("Welcome to the aggregator".as_bytes()).await.expect("Handshake failed");
+    ws_stream
+        .write_all("Welcome to the aggregator".as_bytes())
+        .await
+        .expect("Handshake failed");
 
     let mut guard = shared_state.lock().await;
     guard.connected_clients += 1;
@@ -36,8 +50,10 @@ async fn handle_connection(
         let result = format!("Final aggregated price {final_aggregated_price} ");
         println!("{}", result);
 
-        writeln!(file, "{}", result).expect("Error while writing in file");
-        std::process::exit(0);
+        writeln!(file, "{}\n\n\n\n", result).expect("Error while writing in file");
+        guard.connected_clients = 0;
+        guard.prices.clear();
+        // std::process::exit(0);
     }
 
     drop(guard);
@@ -51,38 +67,32 @@ async fn main() {
 
     let listener = TcpListener::bind(address).await.expect("Failed to connect");
 
-    let shared_state = Arc::new(
-        Mutex::new(SharedState {
-            connected_clients: 0,
-            prices: Vec::new(),
-        })
-    );
+    let shared_state = Arc::new(Mutex::new(SharedState {
+        connected_clients: 0,
+        prices: Vec::new(),
+    }));
 
     println!("Server in listing on {address}");
 
+    let file_path = "./clientAggregationData.txt";
+
     loop {
-        let (socket, add) = listener.accept().await.expect("Socket failed");
+        let (mut socket, add) = listener.accept().await.expect("Socket failed");
 
         println!("New connection {add}");
-
-        // let file_path = "./clientAggregationData.txt";
-        // let file_exists = std::path::Path::new(file_path).exists();
 
         let file = OpenOptions::new()
             .create(true)
             .write(true)
             .append(true)
-            // .truncate(!file_exists)
+            // .truncate(true)
             .open("./clientAggregationData.txt")
             .expect("Error while opening file");
 
         let shared_state_clone = Arc::clone(&shared_state); // Clone for each connection
 
         tokio::spawn(async move {
-            let socket = Arc::new(Mutex::new(socket));
-            let mut socket_guard = socket.lock().await;
-
-            let mut reader = BufReader::new(&mut *socket_guard);
+            let mut reader = BufReader::new(&mut socket);
             let mut buffer = [0_u8; 1024];
 
             match reader.read(&mut buffer).await {
@@ -90,13 +100,7 @@ async fn main() {
                     let data = buffer[0..read_size].to_vec();
                     let string_data = String::from_utf8_lossy(&data).to_string();
 
-                    handle_connection(
-                        add,
-                        socket_guard,
-                        shared_state_clone,
-                        string_data,
-                        file
-                    ).await
+                    handle_connection(add, socket, shared_state_clone, string_data, file).await
                 }
 
                 Ok(_) => {
