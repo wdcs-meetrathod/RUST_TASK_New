@@ -1,0 +1,17 @@
+[package]
+name = "exercise-2"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures-util = { version = "0.3.30", features = ["sink"] }
+http = "1.0.0"
+tokio = { version = "1.36.0", features = ["full"] }
+tokio-websockets = { version = "0.7.0", features = ["client", "fastrand", "server", "sha1_smol"] }
+clap = { version = "4.5.1", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"]}
+serde_json = "1.0"
+tungstenite = { version="0.14.0", features = ["rustls-tls"]}
+url = "2.1.0"

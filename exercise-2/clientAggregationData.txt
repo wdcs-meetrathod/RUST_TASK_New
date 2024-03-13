@@ -1,0 +1,42 @@
+From client 1---> 1603988.290000001
+From client 2---> 5786960.760000004
+From client 3---> 4042590.7499999995
+From client 4---> 2056199.844999999
+From client 5---> 2892345.7049999977
+Final aggregated price 3276417.0700000003 
+
+
+
+
+From client 1---> 2998551.0399999996
+From client 2---> 1883053.9450000015
+From client 3---> 4254249.349999998
+From client 4---> 4915756.495000001
+From client 5---> 1150498.7299999995
+Final aggregated price 3040421.9119999995 
+
+
+
+
+From client 1---> 2091659.1199999999
+From client 2---> 3243552.9649999966
+From client 3---> 2405682.9799999977
+From client 4---> 2580572.389999998
+From client 5---> 2511460.005000001
+Final aggregated price 2566585.491999998 
+
+
+
+
+From client 1---> 1743939.1099999992
+From client 2---> 4640027.265000001
+From client 3---> 2617009.7550000013
+From client 4---> 2826444.2000000016
+From client 5---> 5377261.204999998
+Final aggregated price 3440936.307 
+
+
+
+
+From client 1---> 5939906.2949999785
+From client 2---> 15027913.735000057
