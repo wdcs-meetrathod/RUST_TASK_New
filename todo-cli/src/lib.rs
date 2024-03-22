@@ -56,8 +56,6 @@ impl TodoList {
             }
         };
 
-        // let _ = fs::remove_file(&todo_path);
-
         let todo_backup = match env::var("TODO_BACK_DIR") {
             Ok(t) => t,
             Err(_) => String::from("/tmp/todo.bak"),
@@ -160,8 +158,35 @@ impl TodoList {
                     .write_all(line.as_bytes())
                     .expect("couldn't write the file");
             } else {
+                let line = format!("{}\n", &item);
                 buffer
-                    .write_all(item.as_bytes())
+                    .write_all(line.as_bytes())
+                    .expect("couldn't write the file");
+            }
+        }
+    }
+    pub fn reset(&self) {
+        match fs::remove_file(&self.todo_path) {
+            Ok(_) => println!("Todo has been reset"),
+            Err(_) => eprintln!("Couldn't delete the file"),
+        };
+    }
+
+    pub fn remove(&self, args: &[String]) {
+        Self::not_empty_arg(args);
+
+        let todo_file = OpenOptions::new()
+            .write(true)
+            .open(&self.todo_path)
+            .expect("Couldn't open the file");
+
+        let mut buffer = BufWriter::new(&todo_file);
+
+        for item in self.todo.iter() {
+            if !args.contains(item) {
+                let line = format!("{}\n", &item);
+                buffer
+                    .write_all(line.as_bytes())
                     .expect("couldn't write the file");
             }
         }

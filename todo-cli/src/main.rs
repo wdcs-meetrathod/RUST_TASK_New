@@ -13,6 +13,8 @@ fn main() {
         match &command[..] {
             "add" => todo.add(&args[2..]),
             "done" => todo.done(&args[2..]),
+            "reset" => todo.reset(),
+            "remove" => todo.remove(&args[2..]),
             "list" | _ => todo.list(),
         }
     } else {
