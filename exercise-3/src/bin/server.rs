@@ -1,6 +1,10 @@
+use std::fmt::Debug;
+use std::fs::File;
 use std::{ error::Error, fs::OpenOptions, net::SocketAddr, sync::Arc };
 use std::io::Write;
+use serde::Serialize;
 use tokio::{ io::{ AsyncReadExt, AsyncWriteExt, BufReader }, net::TcpListener, sync::Mutex };
+use tungstenite::Message;
 
 #[path = "../my_module.rs"]
 mod my_module;
@@ -12,9 +16,10 @@ struct SharedState {
 
 async fn handle_connection(
     add: SocketAddr,
-    mut ws_stream: tokio::sync::MutexGuard<'_, tokio::net::TcpStream>,
+    mut ws_stream: tokio::net::TcpStream,
     shared_state: Arc<Mutex<SharedState>>,
-    signed_data: (String, &[u8])
+    signed_data: (String, &[u8]),
+    mut file: File
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     const TOTAL_CLIENT: usize = 5;
 
@@ -23,22 +28,19 @@ async fn handle_connection(
     let mut guard = shared_state.lock().await;
     guard.connected_clients += 1;
 
-    match my_module::verify_message(guard.connected_clients as i32, signed_data) {
-        Some(message) => {
-            let client_price = format!("From client {add:?} {message}");
+    match my_module::verify_message(signed_data) {
+        Some(client_message) => {
+            let client_price = format!(
+                "From client {} {}",
+                client_message.client_id,
+                client_message.message
+            );
 
             println!("{client_price}");
 
-            let mut file = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .append(true)
-                .open("./client_prices.txt")
-                .expect("Error while opening file");
-
             writeln!(file, "{}", client_price).expect("Error while writing in file");
 
-            if let Ok(price) = message.parse::<f64>() {
+            if let Ok(price) = client_message.message.parse::<f64>() {
                 guard.prices.push(price);
             }
 
@@ -50,8 +52,9 @@ async fn handle_connection(
                 println!("{aggregated_price}");
 
                 writeln!(file, "{}", aggregated_price).expect("Error while writing in file");
-
-                std::process::exit(0);
+                guard.connected_clients = 0;
+                guard.prices.clear();
+                // std::process::exit(0);
             }
 
             drop(guard);
@@ -78,17 +81,21 @@ async fn main() {
     println!("Server in listing on {address}");
 
     loop {
-        let (socket, add) = listener.accept().await.expect("Socket failed");
+        let (mut socket, add) = listener.accept().await.expect("Socket failed");
 
         println!("New connection {add}");
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open("./client_prices.txt")
+            .expect("Error while opening file");
 
         let shared_state_clone = Arc::clone(&shared_state); // Clone for each connection
 
         tokio::spawn(async move {
-            let socket = Arc::new(Mutex::new(socket));
-            let mut socket_guard = socket.lock().await;
-
-            let mut reader = BufReader::new(&mut *socket_guard);
+            let mut reader = BufReader::new(&mut socket);
             let mut buffer = [0_u8; 1024];
 
             match reader.read(&mut buffer).await {
@@ -99,7 +106,7 @@ async fn main() {
                         ::deserialize(&data)
                         .expect("Error while deserializing the data");
 
-                    handle_connection(add, socket_guard, shared_state_clone, sign_message).await
+                    handle_connection(add, socket, shared_state_clone, sign_message, file).await
                 }
 
                 Ok(_) => {

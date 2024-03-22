@@ -8,6 +8,7 @@ fn main() {
         private_key: String,
         public_key: String,
     }
+
     let mut tokens: Vec<ClientKeys> = Vec::new();
 
     for i in 0..5 {

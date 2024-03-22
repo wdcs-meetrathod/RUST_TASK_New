@@ -1,17 +1,8 @@
 use std::fs::remove_file;
 use std::io::Write;
 use std::path::Path;
-use std::{
-    error::Error,
-    fs::{File, OpenOptions},
-    net::SocketAddr,
-    sync::Arc,
-};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufReader},
-    net::TcpListener,
-    sync::Mutex,
-};
+use std::{ error::Error, fs::{ File, OpenOptions }, net::SocketAddr, sync::Arc };
+use tokio::{ io::{ AsyncReadExt, AsyncWriteExt, BufReader }, net::TcpListener, sync::Mutex };
 
 struct SharedState {
     prices: Vec<f64>,
@@ -23,14 +14,11 @@ async fn handle_connection(
     mut ws_stream: tokio::net::TcpStream,
     shared_state: Arc<Mutex<SharedState>>,
     text: String,
-    mut file: File,
+    mut file: File
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     const TOTAL_CLIENT: usize = 5;
 
-    ws_stream
-        .write_all("Welcome to the aggregator".as_bytes())
-        .await
-        .expect("Handshake failed");
+    ws_stream.write_all("Welcome to the aggregator".as_bytes()).await.expect("Handshake failed");
 
     let mut guard = shared_state.lock().await;
     guard.connected_clients += 1;
@@ -67,10 +55,12 @@ async fn main() {
 
     let listener = TcpListener::bind(address).await.expect("Failed to connect");
 
-    let shared_state = Arc::new(Mutex::new(SharedState {
-        connected_clients: 0,
-        prices: Vec::new(),
-    }));
+    let shared_state = Arc::new(
+        Mutex::new(SharedState {
+            connected_clients: 0,
+            prices: Vec::new(),
+        })
+    );
 
     println!("Server in listing on {address}");
 

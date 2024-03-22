@@ -40,3 +40,23 @@ Final aggregated price 3440936.307
 
 From client 1---> 5939906.2949999785
 From client 2---> 15027913.735000057
+From client 1---> 3917801.2500000014
+From client 2---> 4027430.5550000016
+From client 3---> 435455.89499999996
+From client 4---> 762047.88
+From client 5---> 943487.84
+Final aggregated price 2017244.6840000008 
+
+
+
+
+From client 1---> 798454.8800000004
+From client 2---> 616987.8500000002
+From client 3---> 13319666.960000051
+From client 4---> 4645329.400000002
+From client 5---> 616987.7850000001
+Final aggregated price 3999485.375000011 
+
+
+
+
